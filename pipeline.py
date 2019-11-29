@@ -205,26 +205,23 @@ class YgaArgs(object):
         yga_args = [
             PYTHON,
             '../../../yahoo.py',
-             '-a',
-             '-t',
-             #'-i',
-             #'-d',
-             #'-f',
-             #'-p',
-             #'-m',
-             #'-c',
-             #'-l',
-             '-w',
+            '-w'
         ]
 
         item_name = item['item_name']
         assert ':' in item_name
-        item_type, item_value = item_name.split(':', 1)
+        item_type, item_value, bonus_flags = item_name.split(':', 2)
 
         item['item_type'] = item_type
         item['item_value'] = item_value
 
         http_client = httpclient.HTTPClient()
+
+        if bonus_flags != "":
+            foreach char in bonus_flags.split:
+                yga_args.append('-' + char)
+        else:
+            yga_args.extend(['-a', '-t')]
 
         if item_type == 'group':
             yga_args.append(item_value)

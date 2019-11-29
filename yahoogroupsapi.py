@@ -33,12 +33,15 @@ class Unrecoverable(YGAException):
     """An error that can not be resolved by retrying the request."""
     pass
 
+class BadSize(YGAException):
+    """The filesize is between 60 and 68 bytes, which could be in error"""
+    pass
 
 class AuthenticationError(Unrecoverable):
     pass
 
 
-class NotAuthenticated(AuthenticationError):
+class NotAuthenticated(YGAException):
     """307, with Yahoo errorCode 1101, user is not logged in and attempting to read content requiring authentication."""
     pass
 
@@ -78,8 +81,10 @@ class YahooGroupsAPI:
     s = None
     ww = None
     http_context = dummy_contextmanager
+    authenticationFailures = 0
 
-    def __init__(self, group, cookie_jar=None, headers={}, min_delay=0, retries=10):
+
+    def __init__(self, group, cookie_jar=None, headers={}, min_delay=0, retries=15):
         self.s = requests.Session()
         self.group = group
         self.min_delay = min_delay
@@ -110,7 +115,10 @@ class YahooGroupsAPI:
     def backoff_time(self, attempt):
         """Calculate backoff time from minimum delay and attempt number.
            Currently no good reason for choice of backoff, except not to increase too rapidly."""
-        return max(self.min_delay, random.uniform(0, attempt))
+        base = 2
+        if attempt > 8:
+            attempt = 8
+        return self.min_delay*base**attempt+random.uniform(0, self.min_delay*base**attempt)
 
     def download_file(self, url, f=None, **args):
         with self.http_context(self.ww):
@@ -132,6 +140,14 @@ class YahooGroupsAPI:
                         self.logger.warning("Giving up, too many failed attempts at downloading %s", url)
                 elif r.status_code != 200:
                     self.logger.error("Unknown %d error for %s, giving up on this download", r.status_code, url)
+                elif len(r.content) in range(60, 69):
+                    self.logger.info("Got potentially invalid size of %d for %s, will sleep and retry", len(r.content), url)
+                    if attempt < self.retries-1:
+                        delay = self.backoff_time(attempt)
+                        self.logger.info("Attempt %d, delaying for %.2f seconds", attempt+1, delay)
+                        time.sleep(delay)
+                        continue
+                    self.logger.warning("Giving up, too many potentially failed attempts at downloading %s", url)
                 r.raise_for_status()
                 break
 
@@ -157,18 +173,29 @@ class YahooGroupsAPI:
                     r = self.s.get(uri, params=opts, verify=VERIFY_HTTPS, allow_redirects=False, timeout=15)
 
                     code = r.status_code
+                    # 307 authentication errors have frequently proven to be transient, but enough in a row might indicate something like an expired cookie.
                     if code == 307:
-                        raise NotAuthenticated()
+                        self.authenticationFailures += 1
+                        if (self.authenticationFailures > 50):
+                            self.logger.debug("Terminating due to %d consecutive authentication failures.", self.authenticationFailures)
+                            raise Unrecoverable()
+                        else:
+                            self.logger.debug("There have been %d consecutive authentication failures. Retrying.", self.authenticationFailures)                       
+                            raise NotAuthenticated()
                     elif code == 401 or code == 403:
                         raise Unauthorized()
                     elif code == 404:
                         raise NotFound()
+                    elif len(r.content) in range(60, 69):
+                        raise BadSize()
                     elif code != 200:
                         # TODO: Test ygError response?
                         raise Recoverable()
 
+                    # Reset authentical failure count upon successful json download.
+                    self.authenticationFailures = 0
                     return r.json()['ygData']
-                except (ConnectionError, Timeout, Recoverable) as e:
+                except (ConnectionError, Timeout, Recoverable, BadSize, NotAuthenticated) as e:
                     self.logger.info("API query failed for '%s': %s", uri, e)
                     self.logger.debug("Exception detail:", exc_info=e)
 

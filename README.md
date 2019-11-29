@@ -132,4 +132,4 @@ Message Range Options:
 
 Output Options:
   -w, --warc            Output WARC file of raw network requests. [Requires
-                        warcio package installed]		
+                        warcio package installed]

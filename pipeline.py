@@ -202,6 +202,8 @@ def stats_id_function(item):
 
 class YgaArgs(object):
     def realize(self, item):
+        http_client = httpclient.HTTPClient()
+
         yga_args = [
             PYTHON,
             '../../../yahoo.py',
@@ -210,18 +212,17 @@ class YgaArgs(object):
 
         item_name = item['item_name']
         assert ':' in item_name
-        item_type, item_value, bonus_flags = item_name.split(':', 2)
+        item_fields = item_name.split(':')
+        item_type, item_value = item_fields[0:2]
 
         item['item_type'] = item_type
         item['item_value'] = item_value
 
-        http_client = httpclient.HTTPClient()
-
-        if bonus_flags != "":
-            foreach char in bonus_flags.split:
-                yga_args.append('-' + char)
+        if len(item_fields) > 2:
+            for c in item_fields[2]:
+                yga_args.append('-' + c)
         else:
-            yga_args.extend(['-a', '-t')]
+            yga_args.extend(['-a', '-t'])
 
         if item_type == 'group':
             yga_args.append(item_value)

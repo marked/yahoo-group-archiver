@@ -219,7 +219,7 @@ class YgaArgs(object):
         item['item_value'] = item_value
 
         if len(item_fields) > 2:
-            for c in item_fields[2]:
+            for c in item_fields[2].split('-'):
                 yga_args.append('-' + c)
         else:
             yga_args.extend(['-a', '-t'])

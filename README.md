@@ -111,6 +111,7 @@ What to archive:
   -m, --members         Only archive members
   -o, --overwrite       Overwrite existing files such as email and database
                         records
+  -na, --noattachments  Skip attachment downloading as part of topics and e-mails
 
 Request Options:
   --user-agent USER_AGENT

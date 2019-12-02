@@ -93,7 +93,7 @@ def archive_messages_metadata(yga):
     return message_ids
 
 
-def archive_message_content(yga, id, status="", skipHTML=False, skipRaw=False):
+def archive_message_content(yga, id, status="", skipHTML=False, skipRaw=False, noAttachments=False):
     logger = logging.getLogger('archive_message_content')
 
     if skipRaw is False:
@@ -120,7 +120,7 @@ def archive_message_content(yga, id, status="", skipHTML=False, skipRaw=False):
                 if 'postDate' in html_json:
                     set_mtime(fname, int(html_json['postDate']))
 
-                if 'attachmentsInfo' in html_json and len(html_json['attachmentsInfo']) > 0:
+                if 'attachmentsInfo' in html_json and (len(html_json['attachmentsInfo']) > 0) and noAttachments is False:
                     with Mkchdir("%d_attachments" % id):
                         process_single_attachment(yga, html_json['attachmentsInfo'])
                     if 'postDate' in html_json:
@@ -129,7 +129,7 @@ def archive_message_content(yga, id, status="", skipHTML=False, skipRaw=False):
                 logger.exception("HTML grab failed for message %d", id)
 
 
-def archive_email(yga, message_subset=None, start=None, stop=None, skipHTML=False, skipRaw=False):
+def archive_email(yga, message_subset=None, start=None, stop=None, skipHTML=False, skipRaw=False, noAttachments=False):
     logger = logging.getLogger('archive_email')
     try:
         # Grab messages for initial counts and permissions check
@@ -164,13 +164,13 @@ def archive_email(yga, message_subset=None, start=None, stop=None, skipHTML=Fals
         status = "(%d of %d)" % (n, len(message_subset))
         n += 1
         try:
-            archive_message_content(yga, id, status, skipHTML, skipRaw)
+            archive_message_content(yga, id, status, skipHTML, skipRaw, noAttachments)
         except Exception:
             logger.exception("Failed to get message id: %d", id)
             continue
 
 
-def archive_topics(yga):
+def archive_topics(yga,noAttachments=False):
     logger = logging.getLogger('archive_topics')
 
 	# Grab messages for initial counts and permissions check
@@ -201,9 +201,9 @@ def archive_topics(yga):
     
     # Continue trying to grab topics and messages until all potential messages are retrieved or found to be unretrievable.
     while potentialMessageIds:
-        startingTopicId = find_topic_id(unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds)
+        startingTopicId = find_topic_id(unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,noAttachments)
         if startingTopicId is not None:
-            process_surrounding_topics(startingTopicId,unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,expectedTopics)
+            process_surrounding_topics(startingTopicId,unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,expectedTopics,noAttachments)
     
            
     logger.info("Topic archiving complete.")
@@ -225,7 +225,7 @@ def archive_topics(yga):
 
 # Find a topic ID from among potentialMessageIds to start topic archiving with.
 # Also save messages from unretrievable topics when possible.
-def find_topic_id(unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds):
+def find_topic_id(unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,noAttachments=False):
     logger = logging.getLogger('find_topic_id')
     
     # Keep looking as long as the set of potential message IDs is not emty.
@@ -262,7 +262,7 @@ def find_topic_id(unretrievableTopicIds,unretrievableMessageIds,retrievedTopicId
                         with open("%s.json" % (msgId,), 'wb') as f:
                             json.dump(html_json, codecs.getwriter('utf-8')(f), ensure_ascii=False, indent=4)
 
-                    if 'attachmentsInfo' in html_json and len(html_json['attachmentsInfo']) > 0:
+                    if 'attachmentsInfo' in html_json and (len(html_json['attachmentsInfo']) > 0) and noAttachments is False:
                         with Mkchdir("%d_attachments" % msgId):
                             process_single_attachment(yga, html_json['attachmentsInfo'])
                 logger.info("%d total messages downloaded.",len(retrievedMessageIds))
@@ -282,9 +282,9 @@ def find_topic_id(unretrievableTopicIds,unretrievableMessageIds,retrievedTopicId
     return None
     
     
-def process_surrounding_topics(startingTopicId,unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,expectedTopics):
+def process_surrounding_topics(startingTopicId,unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,expectedTopics,noAttachments=False):
     logger = logging.getLogger(name="process_surrounding_topics")
-    topicResults = process_single_topic(startingTopicId,unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,expectedTopics)
+    topicResults = process_single_topic(startingTopicId,unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,expectedTopics,noAttachments)
     if topicResults["gotTopic"] is False:
         return
         
@@ -307,7 +307,7 @@ def process_surrounding_topics(startingTopicId,unretrievableTopicIds,unretrievab
         if prevTopicId in unretrievableTopicIds:
             logger.info("Reached known unretrievable topic ID %d",prevTopicId)
             break
-        topicResults = process_single_topic(prevTopicId,unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,expectedTopics)
+        topicResults = process_single_topic(prevTopicId,unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,expectedTopics,noAttachments)
         prevTopicId = topicResults["prevTopicId"]
         
     # Grab all later topics from the starting topic forward.
@@ -316,11 +316,11 @@ def process_surrounding_topics(startingTopicId,unretrievableTopicIds,unretrievab
         if nextTopicId in unretrievableTopicIds:
             logger.info("Reached known unretrievable topic ID %d",nextTopicId)
             break
-        topicResults = process_single_topic(nextTopicId,unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,expectedTopics)
+        topicResults = process_single_topic(nextTopicId,unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,expectedTopics,noAttachments)
         nextTopicId = topicResults["nextTopicId"]
 
  
-def process_single_topic(topicId,unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,expectedTopics):
+def process_single_topic(topicId,unretrievableTopicIds,unretrievableMessageIds,retrievedTopicIds,retrievedMessageIds,potentialMessageIds,expectedTopics,noAttachments=False):
     logger = logging.getLogger(name="process_single_topic")
     topicResults = {
         "gotTopic": False,
@@ -379,7 +379,7 @@ def process_single_topic(topicId,unretrievableTopicIds,unretrievableMessageIds,r
             logger.exception("ERROR: Tried to remove msgId %d from potentialMessageIds when it wasn't there.",msgId)
                             
         # Download messsage attachments if there are any.
-        if 'attachmentsInfo' in message and len(message['attachmentsInfo']) > 0:
+        if 'attachmentsInfo' in message and (len(message['attachmentsInfo']) > 0) and noAttachments is False:
             with Mkchdir("%d_attachments" % msgId):
                 process_single_attachment(yga, message['attachmentsInfo'])
         
@@ -459,7 +459,10 @@ def archive_files(yga, subdir=None):
             if file_keep(new_name, ": %s" % (new_name,)) is False:
                 logger.info("Fetching file '%s' as '%s' (%d/%d)", name, new_name, n, sz)
                 with open(new_name, 'wb') as f:
-                    yga.download_file(path['downloadURL'], f)
+                    try:
+                        yga.download_file(path['downloadURL'], f)
+                    except:
+                        pass # Bad size exceptions can sometimes cause issues going from -f to -i.
                 set_mtime(new_name, path['createdTime'])
 
         elif path['type'] == 1:
@@ -901,6 +904,8 @@ if __name__ == "__main__":
                     help='Only archive members')
     po.add_argument('-o', '--overwrite', action='store_true',
                     help='Overwrite existing files such as email and database records')
+    po.add_argument('-na', '--noattachments', action='store_true',
+                    help='Skip attachment downloading as part of topics and e-mails')
 
 
     pr = p.add_argument_group(title='Request Options')
@@ -987,7 +992,7 @@ if __name__ == "__main__":
 
         if args.email:
             with Mkchdir('email'):
-                archive_email(yga, message_subset=args.ids, start=args.start, stop=args.stop)
+                archive_email(yga, message_subset=args.ids, start=args.start, stop=args.stop,noAttachments=args.noattachments)
         if args.files:
             with Mkchdir('files'):
                 archive_files(yga)
@@ -996,7 +1001,7 @@ if __name__ == "__main__":
                 archive_photos(yga)
         if args.topics:
             with Mkchdir('topics'):
-                archive_topics(yga)
+                archive_topics(yga,noAttachments=args.noattachments)
         if args.raw:
             with Mkchdir('email'):
                 archive_email(yga, message_subset=args.ids, start=args.start, stop=args.stop,skipHTML=True)
